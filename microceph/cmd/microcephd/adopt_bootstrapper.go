@@ -135,6 +135,15 @@ func (ab *AdoptBootstrapper) Bootstrap(ctx context.Context, state interfaces.Sta
 		return err
 	}
 
+	// Mark the Ceph lifecycle as bootstrapped (CE142). The adopt path creates
+	// usable Ceph state (fsid + admin keyring), so it must be reflected in the
+	// lifecycle row. Non-fatal: the defensive config-based check covers a
+	// stale lifecycle row.
+	err = ceph.MarkCephBootstrappedFunc(ctx, state)
+	if err != nil {
+		logger.Warnf("failed to mark ceph lifecycle as bootstrapped: %v", err)
+	}
+
 	return nil
 }
 

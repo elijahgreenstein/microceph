@@ -17,6 +17,7 @@ Available commands:
 
    add                    Generates a token for a new server
    bootstrap              Sets up a new cluster
+   bootstrap-ceph         Bootstrap Ceph on an existing Microcluster member
    config                 Manage Ceph Cluster configs
    export                 Generates cluster token for given Remote cluster
    join                   Joins an existing cluster
@@ -69,6 +70,43 @@ Flags:
    --mon-ip            string Public address for bootstrapping ceph mon service.
    --public-network    string Comma-delimited list of CIDRs for the Ceph public network (Ceph daemons bind addresses).
    --cluster-network   string Comma-delimited list of CIDRs for the Ceph cluster network (OSD replication/recovery traffic).
+   --v2-only                  Whether to support V2 messenger only or both V1 and V2.
+   --defer-ceph               Initialize Microcluster only and defer Ceph bootstrap. Ceph network flags (--mon-ip, --public-network, --cluster-network, --v2-only) are ignored with this option; pass them to 'cluster bootstrap-ceph' instead.
+
+``bootstrap-ceph``
+------------------
+
+Bootstrap Ceph on an existing Microcluster member.
+This is used after a deferred bootstrap (``cluster bootstrap --defer-ceph``) to
+complete the Ceph bootstrap on a specific member.
+
+Usage:
+
+.. code-block:: none
+
+   microceph cluster bootstrap-ceph [flags]
+
+Flags:
+
+.. code-block:: none
+
+   --availability-zone   string Availability zone for the bootstrap target host.
+   --cluster-network     string Comma-delimited list of CIDRs for the Ceph cluster network (OSD replication/recovery traffic).
+   --force                      Recover from a stale in_progress bootstrap state (reset to failed then retry). Not for normal use. Must not be used while a live bootstrap may be running on another member.
+   --mon-ip             string Public address for bootstrapping ceph mon service.
+   --public-network     string Comma-delimited list of CIDRs for the Ceph public network (Ceph daemons bind addresses).
+   --target             string Target Microcluster member name for Ceph bootstrap (required).
+   --v2-only                   Whether to support V2 messenger only or both V1 and V2.
+
+.. warning::
+
+   ``--force`` resets **any** ``in_progress`` lifecycle row, including one
+   belonging to a genuinely live bootstrap running on another member. Using
+   ``--force`` while a live bootstrap is in progress can cause two members to
+   race to bootstrap divergent Ceph clusters. Only use ``--force`` to recover
+   from a stale ``in_progress`` state left behind by a crashed or stuck
+   daemon, and only after confirming no bootstrap is running elsewhere in the
+   cluster.
 
 ``config``
 ----------
@@ -189,6 +227,7 @@ Flags:
 
    --availability-zone string Availability zone for failure domain distribution.
    --microceph-ip      string Network address microceph daemon binds to.
+   --defer-ceph               Join Microcluster only and defer Ceph join auto-placement.
 
 
 ``list``

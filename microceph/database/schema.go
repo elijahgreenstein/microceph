@@ -20,6 +20,8 @@ var SchemaExtensions = []cluster.Update{
 	schemaUpdate5,
 	schemaUpdate6,
 	schemaUpdate7,
+	schemaUpdate8,
+	schemaUpdate9,
 }
 
 // getClusterTableName returns the name of the table that holds the record of cluster members from sqlite_master.
@@ -226,6 +228,69 @@ CREATE TABLE host_tags (
   FOREIGN KEY (member_id) REFERENCES "core_cluster_members" (id) ON DELETE CASCADE,
   UNIQUE(member_id, key)
 );
+  `
+	_, err := tx.ExecContext(ctx, stmt)
+
+	return err
+}
+
+// schemaUpdate8 adds the cluster_lifecycle table (CE142). It is a single-row
+// table tracking Ceph bootstrap lifecycle state for role-managed deployments:
+// MicroCluster can be initialized while Ceph bootstrap is deferred.
+//
+// For clusters already bootstrapped via the legacy SimpleBootstrapper path
+// (which writes fsid and keyring.client.admin config rows), the singleton row
+// is backfilled to state=bootstrapped so GET /placement reports the correct
+// state and a stray bootstrap-ceph is a no-op.
+func schemaUpdate8(ctx context.Context, tx *sql.Tx) error {
+	stmt := `
+CREATE TABLE cluster_lifecycle (
+  id                    INTEGER PRIMARY KEY NOT NULL DEFAULT 1,
+  ceph_bootstrap_state  TEXT    NOT NULL DEFAULT 'not_bootstrapped',
+  ceph_bootstrap_target TEXT,
+  detail                TEXT,
+  CONSTRAINT singleton CHECK (id = 1)
+);
+INSERT INTO cluster_lifecycle (id) VALUES (1);
+
+-- Backfill: if the cluster was already bootstrapped via the legacy path
+-- (fsid + admin keyring exist in the config table), mark the lifecycle row
+-- as bootstrapped so it reflects reality.
+UPDATE cluster_lifecycle
+   SET ceph_bootstrap_state = 'bootstrapped'
+ WHERE id = 1
+   AND EXISTS (SELECT 1 FROM config WHERE key = 'fsid')
+   AND EXISTS (SELECT 1 FROM config WHERE key = 'keyring.client.admin');
+  `
+	_, err := tx.ExecContext(ctx, stmt)
+
+	return err
+}
+
+// schemaUpdate9 adds the placement_policy table (CE142). It is a single-row
+// table storing the last accepted role-managed declarative placement policy as
+// a JSON blob, plus:
+//   - active: whether a role-managed policy is active.
+//   - last_refusal: the most recent placement refusal reason (e.g. keep-one
+//     invariant) so operators and charms polling GET /1.0/placement can inspect
+//     why the last placement PUT was rejected, separately from the bootstrap
+//     lifecycle BlockedReason.
+//   - apply_lock_token: backs the cluster-wide placement apply lock. 0 means
+//     unlocked, any other value is the acquiring writer's token (its
+//     acquisition time in Unix nanoseconds). The token doubles as a lease
+//     timestamp so a lock held by a crashed daemon can be reclaimed once the
+//     lease expires.
+func schemaUpdate9(ctx context.Context, tx *sql.Tx) error {
+	stmt := `
+CREATE TABLE placement_policy (
+  id               INTEGER PRIMARY KEY NOT NULL DEFAULT 1,
+  active           INTEGER NOT NULL DEFAULT 0,
+  policy_json      TEXT,
+  last_refusal     TEXT DEFAULT NULL,
+  apply_lock_token INTEGER NOT NULL DEFAULT 0,
+  CONSTRAINT singleton CHECK (id = 1)
+);
+INSERT INTO placement_policy (id) VALUES (1);
   `
 	_, err := tx.ExecContext(ctx, stmt)
 
